@@ -4,7 +4,7 @@
 #include <OneButton.h>
 // Encoder must be included before Control Surface
 #include <Encoder.h>
-#include <Control_Surface.h> // Include the library
+#include <Control_Surface.h> // Include the library version 1.2.0 (e36305d1)
 
 // Default MIDI CC values
 int modWheelMsg[] = {
@@ -49,8 +49,8 @@ TM1637Display display(14, 15);
 USBMIDI_Interface usbmidi;
 HardwareSerialMIDI_Interface serialmidi = {Serial1, MIDI_BAUD};
 
-// And group them together
-MultiMIDI_Interface<2> midi = {{&usbmidi, &serialmidi}};
+// Create a MIDI pipe factory to connect the MIDI interfaces to Control Surface
+BidirectionalMIDI_PipeFactory<2> pipes;
 
 // Array of banks allows dynamic indexing
 Bank<120> banks[] = {
@@ -66,8 +66,8 @@ OneButton enc_button(4, true);
 
 // Array of potentiometers
 Bankable::CCPotentiometer potentiometers[] = {
-  {{banks[0], BankType::CHANGE_ADDRESS}, A0, {0x00, CHANNEL_1}}, // TODO: fix the PCB design only pins A1 and A9 functional on the pcb, some headers wrongly connected to PWM pins instead of Analog
-  {{banks[1], BankType::CHANGE_ADDRESS}, A9, {0x00, CHANNEL_1}}, // investigate the board with preferably another Arduino
+  {{banks[0], BankType::ChangeAddress}, A0, {0x00, Channel_1}}, // TODO: fix the PCB design only pins A1 and A9 functional on the pcb, some headers wrongly connected to PWM pins instead of Analog
+  {{banks[1], BankType::ChangeAddress}, A9, {0x00, Channel_1}}, // investigate the board with preferably another Arduino
 };
 
 void setup() {
@@ -95,6 +95,9 @@ void setup() {
 
   enc_button.attachClick(modeCheck);                  // Define button actions
   enc_button.attachDoubleClick(saveToMemory);
+  Serial1.begin(MIDI_BAUD);
+  Control_Surface | pipes | usbmidi;
+  Control_Surface | pipes | serialmidi;
 }
 
 // Function to read encoder in a range and display the current value
