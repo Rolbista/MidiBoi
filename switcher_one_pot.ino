@@ -24,6 +24,7 @@ bool showLastCC  = false;
 
 int whichPot = 1; // Selected potentiometer
 
+//dupa test test
 // Diagnostic display message for loop mode
 
 const uint8_t SEG_DONE[] = {
