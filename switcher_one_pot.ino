@@ -23,6 +23,44 @@ bool showLastPot = false; // Switch variables to trigger single display instruct
 bool showLastCC  = false;
 
 int whichPot = 1; // Selected potentiometer
+unsigned int whichPotTemp;
+
+//analog_t minimum_values[] {0, 32};
+//analog_t maximum_values[] {64, 75};
+
+//uint8_t minimum_values[] {0, 32};
+//uint8_t maximum_values[] {64, 75};
+
+//int minimum_values[] {0, 0};
+//int maximum_values[] {127, 63};
+analog_t midiMax = 128;
+//int minimumValue = 0;
+//int maximumValue = midiMax * (maximum_values[1] + 1);
+//analog_t MinVal = 0;
+//analog_t MaxVal = 16384;
+
+// template <analog_t MinVal, analog_t MaxVal>
+// analog_t mappingFunction(analog_t raw) {
+//     raw = constrain(raw, 0, 16384);
+//     //return map(raw, MinVal, MaxVal, 0, FilteredAnalog<7>::getMaxRawValue() / 2);
+//     return map(raw, 0, 16384, FilteredAnalog<7>::getMaxRawValue() / 2, FilteredAnalog<7>::getMaxRawValue());
+// }
+analog_t minimum_values[] {0, 0};
+analog_t maximum_values[] {127, 63};
+
+template <size_t I>
+analog_t mappingFunction(analog_t raw) {
+    raw = constrain(raw, 2048, 16384);
+    return map(raw, 2048, 16384, minimum_values[I] * 128, maximum_values[I] * 128);
+}
+
+// template <analog_t MinVal, analog_t MaxVal>
+// analog_t mappingFunction(analog_t raw) {
+//     //raw = constrain(raw, 0, 16384);
+//     raw = constrain(raw, 2048, 16384);
+//     //return map(raw, MinVal, MaxVal, 0, FilteredAnalog<7>::getMaxRawValue() / 2);
+//     return map(raw, 2048, 16384, MinVal, MaxVal);
+// }
 
 // Diagnostic display message for loop mode
 
@@ -87,6 +125,13 @@ void setup() {
   // Initial MIDI potentiometer setting
   banks[0].select(modWheelMsg[0]);
   banks[1].select(modWheelMsg[1]);
+  
+  //potentiometers[0].map(mappingFunction); // set potentiometer 0 (1) to range from minimum_values[0] to maximum_values[0] (I guess?)
+  //potentiometers[0].map(mappingFunction);
+  // potentiometers[0].map(mappingFunction<0 * 128, 128 * 128>);
+  //potentiometers[1].map(mappingFunction<minimum_values[1] * 128, maximum_values[1] * 128>);
+  potentiometers[0].map(mappingFunction<0>);
+  potentiometers[1].map(mappingFunction<1>);
 
   // Button setup
   enc_button.setClickTicks(175);                      // Set faster timing for the button, subject to experimentation
@@ -175,6 +220,10 @@ void loop() {
 
       whichPot = encoderConfig(&encoderSelectMode, &display, 1, 2, whichPot);
       encoderConfigMode.setPosition( modWheelMsg[whichPot - 1] * rotarySteps ); // Set config encoder to selected potentiometer's recent value so it starts from there in MODE_CONFIG
+      minimum_values[whichPot - 1] = 35;
+      maximum_values[whichPot - 1] = 100;
+      whichPotTemp = whichPot - 1;
+      potentiometers[whichPot - 1].map(mappingFunction<whichPotTemp>);
 
       showLastCC = true;                              // Update the switch variable to display last selected CC message in MODE_CONFIG
 
