@@ -1,0 +1,47 @@
+# Reproducible build definition for MidiBoi.
+#
+# Every platform and library is pinned to an exact version. Profile builds are
+# ISOLATED: whatever is in ~/Documents/Arduino/libraries is ignored completely,
+# so a clean checkout on any machine compiles the same bytes.
+#
+#   arduino-cli compile                       # uses default_profile
+#   arduino-cli compile --profile latest      # trial-run the upgrades
+#   arduino-cli upload -p /dev/tty.usbmodemXXXX
+#   arduino-cli board list                    # find your port
+#
+# Adding a library:  arduino-cli profile lib add "Name@1.2.3" --profile leonardo
+
+profiles:
+
+  # Pinned to the versions this sketch was last known to build against.
+  leonardo:
+    notes: Arduino Pro Micro / Leonardo (ATmega32U4). Known-good pins.
+    fqbn: arduino:avr:leonardo
+    platforms:
+      - platform: arduino:avr (1.8.6)
+    libraries:
+      # 2.0.0 is the closest released version to the previously vendored
+      # checkout (commit 3aaab29e, a pre-2.0.0 snapshot of main).
+      - Control Surface (2.0.0)
+      - MIDIUSB (1.0.5)          # required by Control Surface on AVR
+      - Encoder (1.4.2)          # must be included before Control_Surface.h
+      - RotaryEncoder (1.3.0)
+      - OneButton (2.0.4)
+      # Replaces the clytras/TM1637Display fork; same avishorp API surface.
+      - TM1637 (1.2.0)
+
+  # Upgrade candidate. Compile against this before bumping the pins above.
+  latest:
+    notes: Current upstream releases. Use to test upgrades in isolation.
+    fqbn: arduino:avr:leonardo
+    platforms:
+      - platform: arduino:avr (1.8.8)
+    libraries:
+      - Control Surface (2.1.2)
+      - MIDIUSB (1.0.5)
+      - Encoder (1.4.4)
+      - RotaryEncoder (1.6.0)
+      - OneButton (2.6.2)
+      - TM1637 (1.2.0)
+
+default_profile: leonardo
