@@ -25,25 +25,22 @@ constexpr uint8_t VALUE_MAX = 127;
 // ---------------------------------------------------------- ranged sender --
 
 /**
- * Drop-in replacement for ContinuousCCSender that rescales the 7-bit
- * potentiometer value into an arbitrary [lower, upper] window before sending.
+ * Rescales the 7-bit potentiometer value into an arbitrary [lower, upper]
+ * output window. Despite the name it no longer sends anything -- see
+ * RangedCCPotentiometer, which owns the send decision so that it can be made
+ * after this scaling rather than before it.
  *
  * Why here and not via FilteredAnalog::map(): Control Surface's map() takes a
  * plain function pointer (`analog_t (*)(analog_t)`), so the mapping function
  * cannot carry any per-potentiometer state -- which is what forced the earlier
- * template-per-index workaround. The Sender, by contrast, is an ordinary
- * per-element object that MIDIFilteredAnalog exposes as a public member, so
- * limits stored in it are freely writable at runtime.
+ * template-per-index workaround. This, by contrast, is an ordinary per-element
+ * object, so limits stored in it are freely writable at runtime.
  */
 class RangedCCSender {
   public:
     /// User-facing output window, edited from the front panel.
     uint8_t lower = 0;
     uint8_t upper = VALUE_MAX;
-
-    void send(uint8_t value, MIDIAddress address) {
-        Control_Surface.sendControlChange(address, scale(value));
-    }
 
     constexpr static uint8_t precision() { return 7; }
 
@@ -60,10 +57,66 @@ class RangedCCSender {
 
 /// A CCPotentiometer whose controller number *and* output range can both be
 /// changed at runtime -- no Banks required.
-class RangedCCPotentiometer : public MIDIFilteredAnalog<RangedCCSender> {
+///
+/// This owns its FilteredAnalog instead of inheriting MIDIFilteredAnalog, for
+/// one reason: MIDIFilteredAnalog::update() is `final`, and it sends whenever
+/// the *pre-scaling* hysteresis moves. RangedCCSender::scale() then compresses
+/// that 7-bit value into [lower, upper], so a narrow window maps several input
+/// steps onto one output value -- and every one of them still emitted a CC
+/// message carrying a value identical to the previous one. Measured with
+/// L=32/H=63, roughly three messages in four were duplicates. Deciding after
+/// scaling fixes it, and `final` leaves no way to do that by inheritance.
+class RangedCCPotentiometer : public MIDIOutputElement {
   public:
     RangedCCPotentiometer(pin_t analogPin, MIDIAddress address)
-        : MIDIFilteredAnalog(analogPin, address, {}) {}
+        : filteredAnalog(analogPin), address(address) {}
+
+    void begin() override {
+        filteredAnalog.resetToCurrentValue();
+        // Seed the duplicate check with where the wheel actually is, so the
+        // first movement is compared against reality rather than a phantom 0.
+        lastSent = sender.scale(filteredAnalog.getValue());
+    }
+
+    void update() override {
+        if (filteredAnalog.update())
+            sendIfChanged();
+    }
+
+    /// Send only when the value that would go on the wire has actually moved.
+    void sendIfChanged() {
+        uint8_t value = sender.scale(filteredAnalog.getValue());
+        if (value == lastSent)
+            return;
+        lastSent = value;
+        Control_Surface.sendControlChange(address, value);
+    }
+
+    /// Send regardless of whether the value changed. Used when the CC number
+    /// or the output window was edited underneath us, where the instrument
+    /// needs the current value even though the wheel has not moved.
+    void forcedUpdate() {
+        lastSent = sender.scale(filteredAnalog.getValue());
+        Control_Surface.sendControlChange(address, lastSent);
+    }
+
+    void map(MappingFunction fn) { filteredAnalog.map(fn); }
+    void setAddress(MIDIAddress addr) { address = addr; }
+    MIDIAddress getAddress() const { return address; }
+
+    static constexpr analog_t getMaxRawValue() {
+        return FilteredAnalog_t::getMaxRawValue();
+    }
+
+    /// User-facing output window, edited from the front panel.
+    RangedCCSender sender;
+
+  private:
+    using FilteredAnalog_t = AH::FilteredAnalog<RangedCCSender::precision()>;
+    FilteredAnalog_t filteredAnalog;
+    MIDIAddress address;
+    /// 0xFF is not a legal 7-bit value, so it reads as "nothing sent yet".
+    uint8_t lastSent = 0xFF;
 };
 
 // ------------------------------------------------------------- hardware ----
@@ -92,14 +145,32 @@ RangedCCPotentiometer potentiometers[NUM_POTS] = {
 constexpr analog_t RAW_MAX = RangedCCPotentiometer::getMaxRawValue();
 
 // Per-unit calibration: {inLow, inHigh} of each wheel's usable travel, in raw
-// 14-bit units. Neither wheel on this board reaches the ADC rails -- measured
-// with a MIDI monitor over a deliberate stop-to-stop sweep, wheel 1 covered
-// 1..125 of the 7-bit output and wheel 2 only 7..114. The bounds sit a little
-// inside those extremes so both mechanical stops saturate rather than landing
-// just short. Re-measure if a potentiometer, wheel or the PCB changes.
+// 14-bit units. The bounds sit inside the measured extremes and calibrate()
+// clamps outside them. That clamp is the only reason 0 and 127 are reachable
+// at all: Hysteresis<7> uses a margin of 127 with an offset of 64, so stepping
+// onto the last value needs the input within 64 counts of the rail, which a
+// hand-moved wheel will not deliver reliably.
+//
+// Measured from the raw ADC (2026-11-04), normal playing force, several
+// stop-to-stop sweeps, in 10-bit counts -- NOT through a MIDI monitor, which
+// reports post-hysteresis values and therefore reads systematically narrower
+// than the true travel:
+//
+//   A0  travel 52..1023   bottom of travel lands 52..64, worst case 72
+//   A9  travel  0..996
+//
+// A0's lower bound was 3 * 128 (ADC 24), below the bottom of travel, so the
+// wheel could never reach the clamp. Its lowest 7-bit output was 4, which
+// through an output window of L=64/H=127 showed up as 66 instead of 64. It is
+// now 12 * 128 (ADC 96), three MIDI steps clear of the worst-case push.
+//
+// These shift when a wheel is refitted: removing both pots and putting them
+// back moved A0's bottom from 0 to 52 and A9's top from 957 to 996, because
+// the wheel ends up at a different angle on the shaft. Re-measure after any
+// mechanical work, and prefer the raw ADC over a MIDI monitor when doing so.
 const analog_t POT_CALIBRATION[NUM_POTS][2] = {
-    {3 * 128, 123 * 128}, // A0
-    {9 * 128, 108 * 128}, // A9, stops shy of 112 * 128 on a soft push
+    {12 * 128, 123 * 128}, // A0
+    {9 * 128, 108 * 128},  // A9, both ends verified to reach their clamps
 };
 
 /// Stretch a pot's usable travel back out to the full raw range, so the
