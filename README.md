@@ -16,21 +16,50 @@ two or want a comfortable wheel to steer a parameter not present on the panel.
 ## Setup  
 
 The default selected board is Arduino Pro Micro or clone because of its small size and native USB capability which  
-allows you to use it with your DAW without any extra fuss. The library dependencies are in the sketch.  
-Open the `./switcher_one_pot.ino` sketch, update the pins as appropriate and upload it.
+allows you to use it with your DAW without any extra fuss. Every platform and library version is pinned in  
+`sketch.yaml`, so a clean checkout compiles identically on any machine. The only prerequisite is  
+[arduino-cli](https://arduino.github.io/arduino-cli/) - on macOS, `brew install arduino-cli`. Dependencies download  
+automatically on the first build.  
+
+```bash
+make build    # compile with the pinned profile
+make upload   # compile and flash a connected board
+make ports    # list connected boards, if detection fails
+make db       # regenerate compile_commands.json + .clangd for the editor
+```
+
+Pin assignments live in the constants at the top of `MidiBoi.ino`; adjust them if your wiring differs.
 
 ## Usage
 
 MidiBoi™ is powered by USB, just plug one of those old phone chargers that you have lying around that will surely  
 come in handy one day - now is their time to shine! Use a standard DIN MIDI cable to connect MidiBoi™ output to  
-synth MIDI input. Default CC are 26 (LFO intensity) for wheel 1 and 24 (LFO rate) for wheel 2. When the controller  
-powers up it works in default, loop mode, sending default messages. To reprogram wheel 1 push the encoder button once,  
-select the desired wheel number (1), press the button again. Now select new CC message (0-119) keeping in mind your  
-synths MIDI implementation. Press the button again to save the change. Now wheel one send a new CC message and you  
-instrument should react accordingly.  
-  
-To save potentiometer settings to persistent memory double press the encoder while in `PLAY`/`LOOP` mode.  
-A `SAVE` message should display for 1,5 seconds and return to normal.  
+synth MIDI input. Default CC are 26 (LFO intensity) for wheel 1 and 24 (LFO rate) for wheel 2.  
+
+On power-up the controller reads its configuration from EEPROM - falling back to the defaults if nothing valid is  
+stored - and starts in `PLAY` mode, sending the configured messages on channel 1. Clicking the encoder steps through  
+the configuration modes and wraps back around:
+
+| Click | Display | Mode |
+|-------|---------|------|
+| 1 | `P n` | select which wheel to configure |
+| 2 | `C nnn` | set that wheel's CC number (0-119) |
+| 3 | `L nnn` | set the lowest value that wheel will send |
+| 4 | `H nnn` | set the highest value that wheel will send |
+| 5 | `PLAY` | back to normal operation |
+
+Turn the encoder to change the displayed value. Edits take effect on returning to `PLAY`.
+
+The lower and upper limits map a wheel's full physical travel onto part of the MIDI range. That helps with instruments  
+implementing bipolar modulation by splitting the range in half, where 0-63 is negative and 64-127 positive: setting  
+`L` to 63 and `H` to 127 gives positive modulation only, across the whole throw of the wheel, and the bottom of its  
+travel reliably returns to neutral. Setting `H` below `L` inverts the response.
+
+CC numbers stop at 119 on purpose. 120-127 are Channel Mode messages - All Sound Off, Reset All Controllers, All Notes  
+Off - and sweeping a wheel through those would badly misbehave on the receiving instrument.
+
+To save potentiometer settings to persistent memory double press the encoder while in `PLAY` mode.  
+A `SAVE` message displays for one second and returns to normal.  
 
 ## Features
 
@@ -38,6 +67,7 @@ A `SAVE` message should display for 1,5 seconds and return to normal.
 * Encoder for value input
 * Support for n potentiometers with reprogrammable CCs limited only by number of ADC pins on selected Arduino board
 * Support for storing and saving potentiometer configs in EEPROM  
+* Per-wheel output range, for instruments that split the MIDI range into bipolar modulation halves  
 * USB and DIN5 MIDI output on channel 1
 * Extensibility: with little modification of the hardware any MIDI parameter can be controlled with any type of analog device - add a jack for an expression pedal if you like
 
