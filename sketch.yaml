@@ -20,13 +20,19 @@ profiles:
     platforms:
       - platform: arduino:avr (1.8.6)
     libraries:
-      # 2.0.0 is the closest released version to the previously vendored
-      # checkout (commit 3aaab29e, a pre-2.0.0 snapshot of main).
-      - Control Surface (2.0.0)
+      - Control Surface (2.1.2)
       - MIDIUSB (1.0.5)          # required by Control Surface on AVR
-      - Encoder (1.4.2)          # must be included before Control_Surface.h
+      # mathertel's decoder, driven from interrupts by the sketch. Preferred
+      # over the AHEncoder that Control Surface bundles because it discards
+      # untrackable quadrature transitions instead of guessing +/-2, which a
+      # bouncing contact turns into phantom counts. Held at 1.3.0 in both
+      # profiles on purpose: later releases add a latch-mode option that
+      # changes the step size, so a bump needs a deliberate re-test.
       - RotaryEncoder (1.3.0)
-      - OneButton (2.0.4)
+      # 2.6.2, not 2.0.4: 2.0.x *discards* a press whose release lands inside
+      # the debounce window, so a bouncy switch never produces a click at all.
+      # 2.6.2 filters the input instead of throwing the press away.
+      - OneButton (2.6.2)
       # Replaces the clytras/TM1637Display fork; same avishorp API surface.
       - TM1637 (1.2.0)
 
@@ -39,9 +45,8 @@ profiles:
     libraries:
       - Control Surface (2.1.2)
       - MIDIUSB (1.0.5)
-      - Encoder (1.4.4)
-      - RotaryEncoder (1.6.0)
       - OneButton (2.6.2)
       - TM1637 (1.2.0)
+      - RotaryEncoder (1.3.0) # see note above before bumping
 
 default_profile: leonardo
